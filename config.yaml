@@ -1,0 +1,134 @@
+# ================================================================================
+# Document Summarizer Configuration
+# ================================================================================
+# This file contains all configurable settings for the summarizer application.
+# Modify these values to customize the behavior without changing code.
+
+# ================================================================================
+# DOCUMENT PROCESSING SETTINGS
+# ================================================================================
+document_processing:
+  # Size of text chunks in characters
+  chunk_size: 1000
+
+  # Number of overlapping characters between chunks
+  # Helps maintain context across chunk boundaries
+  chunk_overlap: 100
+
+  # Supported file types (MIME types)
+  supported_types:
+    - "text/plain"
+    - "text/csv"
+    - "application/pdf"
+
+# ================================================================================
+# LLM MODEL SETTINGS
+# ================================================================================
+llm:
+  # Primary LLM provider: 'openai' or 'groq'
+  provider: "openai"
+
+  # OpenAI configuration
+  openai:
+    model: "gpt-4o-mini"
+    # Optional: Set custom parameters
+    # temperature: 0.3
+    # max_tokens: 2000
+
+  # Groq configuration (free alternative)
+  groq:
+    model: "llama-3.3-70b-versatile"
+    # Optional: Set custom parameters
+    # temperature: 0.3
+    # max_tokens: 2000
+
+# ================================================================================
+# RETRY LOGIC SETTINGS
+# ================================================================================
+retry:
+  # Maximum number of retry attempts for API calls
+  max_attempts: 3
+
+  # Exponential backoff configuration
+  backoff:
+    multiplier: 1
+    min_seconds: 2
+    max_seconds: 10
+
+# ================================================================================
+# LOGGING SETTINGS
+# ================================================================================
+logging:
+  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+
+  # Log file name
+  filename: "summarizer.log"
+
+  # Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Enable console logging
+  console_enabled: true
+
+  # Enable file logging
+  file_enabled: true
+
+# ================================================================================
+# PROMPT TEMPLATES
+# ================================================================================
+prompts:
+  # Prompt template for chunk summarization
+  chunk_summary: |
+    You are a highly skilled AI model tasked with summarizing text.
+    Please summarize the following chunk of text in a concise manner,
+    highlighting the most critical information. Do not omit key details:
+
+    {document}
+
+  # Prompt template for final summary generation
+  final_summary: |
+    You are an expert summarizer tasked with creating a final summary from summarized chunks.
+    Combine the key points from the provided summaries into a cohesive and comprehensive summary.
+    The final summary should be concise but detailed enough to capture the main idea:
+
+    {document}
+
+# ================================================================================
+# STREAMLIT UI SETTINGS
+# ================================================================================
+ui:
+  # Application title
+  title: "Summarizer App"
+
+  # Application description
+  description: "## Start summarizing your documents."
+
+  # File uploader configuration
+  file_uploader:
+    label: "Upload a Text, PDF, or CSV file."
+    help_text: "Select a file to process. Supported formats: TXT, PDF, CSV"
+
+  # Download button configuration
+  download_button:
+    label: "Download final summary"
+    filename: "final_summary.txt"
+
+  # Progress messages
+  messages:
+    processing_file: "Processing the uploaded file..."
+    summarizing_chunks: "Summarizing chunks..."
+    creating_final_summary: "Creating final summary from document..."
+
+  # Success messages
+  success:
+    file_uploaded: "✅ File uploaded and processed into {count} chunks"
+
+  # Error messages
+  errors:
+    rate_limit: "⚠️ API rate limit exceeded. Please wait a moment and try again."
+    connection_error: "⚠️ Unable to connect to the AI service. Please check your internet connection."
+    api_error: "⚠️ AI service error: {error}"
+    unsupported_file: "❌ {error}"
+    processing_error: "❌ An error occurred while processing the file: {error}"
+    unexpected_error: "❌ An unexpected error occurred: {error}"

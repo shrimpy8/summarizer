@@ -1,3 +1,37 @@
-.DS_Store
+# Environment
 .env
 .venv
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Uploaded files (temp storage)
+*.pdf
+*.docx
+*.csv
+uploads/
+
+# Streamlit
+.streamlit/

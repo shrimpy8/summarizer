@@ -5,4 +5,6 @@ langchain-groq
 langchain-openai
 pypdf
 python-dotenv
+pyyaml
 streamlit
+tenacity
