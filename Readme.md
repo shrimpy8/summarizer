@@ -1,6 +1,6 @@
 # Document Summarizer
 
-A production-ready Streamlit application that intelligently summarizes text, PDF, and CSV documents using advanced LLM technology with built-in retry logic, structured logging, and comprehensive error handling.
+A Streamlit application that intelligently summarizes text, PDF, and CSV documents using advanced LLM technology with built-in retry logic, structured logging, and comprehensive error handling.
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/streamlit-1.0+-red.svg)](https://streamlit.io/)
