@@ -1,19 +1,105 @@
 """
 Document loader module for handling various file formats.
 
-Supports: TXT, PDF, CSV
+Supports: TXT, PDF, CSV, DOCX
+
+This module provides the DocumentProcessor class for loading, processing,
+and chunking various document formats for summarization.
 """
 
 import os
 import tempfile
 import uuid
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
+
 from langchain_community.document_loaders import TextLoader, CSVLoader, PyPDFLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_core.documents import Document
 
+# DOCX support
+try:
+    from docx import Document as DocxDocument
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+
+class DocxLoader:
+    """
+    Custom document loader for Microsoft Word (.docx) files.
+
+    Uses python-docx to extract text from DOCX files and converts
+    them to LangChain Document format.
+    """
+
+    def __init__(self, file_path: str):
+        """
+        Initialize the DOCX loader.
+
+        Args:
+            file_path: Path to the DOCX file
+
+        Raises:
+            ImportError: If python-docx is not installed
+        """
+        if not DOCX_AVAILABLE:
+            raise ImportError(
+                "python-docx is required for DOCX support. "
+                "Install it with: pip install python-docx"
+            )
+        self.file_path = file_path
+        logger.debug(f"DocxLoader initialized for: {file_path}")
+
+    def load(self) -> List[Document]:
+        """
+        Load and extract text from the DOCX file.
+
+        Returns:
+            List containing a single Document with the extracted text
+
+        Raises:
+            Exception: If file cannot be read or parsed
+        """
+        try:
+            logger.info(f"Loading DOCX file: {self.file_path}")
+            doc = DocxDocument(self.file_path)
+
+            # Extract text from all paragraphs
+            paragraphs = []
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    paragraphs.append(para.text)
+
+            # Also extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            row_text.append(cell.text.strip())
+                    if row_text:
+                        paragraphs.append(" | ".join(row_text))
+
+            full_text = "\n\n".join(paragraphs)
+
+            logger.info(f"Extracted {len(paragraphs)} paragraphs/rows from DOCX")
+            logger.debug(f"Total text length: {len(full_text)} characters")
+
+            return [Document(
+                page_content=full_text,
+                metadata={
+                    "source": self.file_path,
+                    "file_type": "docx",
+                    "paragraph_count": len(paragraphs)
+                }
+            )]
+
+        except Exception as e:
+            logger.error(f"Error loading DOCX file: {str(e)}", exc_info=True)
+            raise
 
 
 class DocumentProcessor:
@@ -22,7 +108,8 @@ class DocumentProcessor:
     SUPPORTED_TYPES = {
         "text/plain": "TXT",
         "text/csv": "CSV",
-        "application/pdf": "PDF"
+        "application/pdf": "PDF",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX"
     }
 
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 100):
@@ -65,6 +152,7 @@ class DocumentProcessor:
 
         Raises:
             ValueError: If file type is not supported
+            ImportError: If required library is not installed (e.g., python-docx)
         """
         if mime_type == "text/plain":
             logger.info("Using TextLoader for TXT file")
@@ -75,6 +163,14 @@ class DocumentProcessor:
         elif mime_type == "application/pdf":
             logger.info("Using PyPDFLoader for PDF file")
             return PyPDFLoader(file_path)
+        elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            logger.info("Using DocxLoader for DOCX file")
+            if not DOCX_AVAILABLE:
+                raise ImportError(
+                    "python-docx is required for DOCX support. "
+                    "Install it with: pip install python-docx"
+                )
+            return DocxLoader(file_path)
         else:
             raise ValueError(f"Unsupported file type: {mime_type}")
 

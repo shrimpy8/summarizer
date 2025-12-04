@@ -28,10 +28,13 @@ Thumbs.db
 *.log
 
 # Uploaded files (temp storage)
-*.pdf
-*.docx
-*.csv
 uploads/
 
 # Streamlit
 .streamlit/
+
+# Pytest cache
+.pytest_cache/
+
+# Claude
+.claude/

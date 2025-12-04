@@ -4,7 +4,9 @@ langchain-community
 langchain-groq
 langchain-openai
 pypdf
+python-docx
 python-dotenv
 pyyaml
 streamlit
 tenacity
+pytest

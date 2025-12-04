@@ -20,6 +20,7 @@ document_processing:
     - "text/plain"
     - "text/csv"
     - "application/pdf"
+    - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 # ================================================================================
 # LLM MODEL SETTINGS
@@ -106,8 +107,8 @@ ui:
 
   # File uploader configuration
   file_uploader:
-    label: "Upload a Text, PDF, or CSV file."
-    help_text: "Select a file to process. Supported formats: TXT, PDF, CSV"
+    label: "Upload a Text, PDF, CSV, or Word document."
+    help_text: "Select a file to process. Supported formats: TXT, PDF, CSV, DOCX"
 
   # Download button configuration
   download_button:

@@ -1,17 +1,27 @@
 """
 Document Summarizer Application
 
-A Streamlit-based application for summarizing text, PDF, and CSV documents
-using Large Language Models (LLMs) with automatic retry logic and comprehensive
-error handling.
+A Streamlit-based application for summarizing text, PDF, CSV, and Word documents
+using Large Language Models (LLMs) with automatic retry logic, comprehensive
+error handling, progress tracking, and quality metrics.
 
 Author: Harsh
-Date: 2025-11-30
-Version: 2.0.0
+Date: 2025-12-03
+Version: 2.1.0
 """
 
 from typing import Dict, Any, List
+import time
 import streamlit as st
+
+# Page config must be first Streamlit command - enables wide layout
+st.set_page_config(
+    page_title="Document Summarizer",
+    page_icon="📄",
+    layout="wide",  # This makes the main content area wider
+    initial_sidebar_state="expanded"
+)
+
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -24,6 +34,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from openai import RateLimitError, APIConnectionError, APIError
 from document_loaders import DocumentProcessor
 from config_loader import get_config
+from progress_tracker import StreamlitProgressTracker
+from quality_metrics import QualityAnalyzer, display_quality_metrics
 
 
 # ================================================================================
@@ -113,10 +125,188 @@ def invoke_llm_with_retry(
 
 ui_config = config.get_ui_config()
 
+# Custom CSS for improved UI layout
+st.markdown("""
+<style>
+    /* Increase overall font size */
+    html, body, [class*="css"] {
+        font-size: 16px !important;
+    }
+
+    /* Increase paragraph and text font size */
+    p, li, span, div {
+        font-size: 1.1rem !important;
+    }
+
+    /* Larger headings */
+    h1 {
+        font-size: 2.2rem !important;
+    }
+    h2 {
+        font-size: 1.8rem !important;
+    }
+    h3 {
+        font-size: 1.5rem !important;
+    }
+
+    /* Increase sidebar width by 5% */
+    [data-testid="stSidebar"] {
+        min-width: 320px !important;
+        max-width: 320px !important;
+        width: 320px !important;
+    }
+
+    [data-testid="stSidebarContent"] {
+        width: 100% !important;
+    }
+
+    /* Reduce main content area by 5% */
+    .stMainBlockContainer,
+    [data-testid="stMainBlockContainer"],
+    .block-container,
+    [class*="block-container"] {
+        max-width: 95% !important;
+        width: 95% !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }
+
+    /* Target the main section */
+    .main,
+    section.main,
+    [data-testid="stMain"] {
+        width: 100% !important;
+    }
+
+    /* Reduce the AppView padding/margin */
+    .stApp > header + div,
+    [data-testid="stAppViewContainer"] {
+        padding-left: 0 !important;
+    }
+
+    /* Target inner content wrapper */
+    .stApp [data-testid="stAppViewContainer"] > section {
+        padding-left: 0.5rem !important;
+    }
+
+    /* Larger button text */
+    .stButton > button {
+        font-size: 1.1rem !important;
+    }
+
+    /* Larger selectbox text */
+    .stSelectbox label, .stSelectbox div {
+        font-size: 1.05rem !important;
+    }
+
+    /* Larger metrics text */
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem !important;
+    }
+
+    [data-testid="stMetricLabel"] {
+        font-size: 1rem !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title(ui_config.get('title', 'Summarizer App'))
 st.divider()
 
 st.markdown(ui_config.get('description', '## Start summarizing your documents.'))
+
+# ================================================================================
+# SIDEBAR CONFIGURATION SELECTOR
+# ================================================================================
+# Allows users to switch LLM provider and model without editing config files
+
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    st.markdown("---")
+
+    # LLM Provider selection
+    st.subheader("LLM Provider")
+
+    # Available providers and their models
+    PROVIDER_MODELS = {
+        "OpenAI": {
+            "models": ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
+            "default": config.openai_model
+        },
+        "Groq": {
+            "models": ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "mixtral-8x7b-32768"],
+            "default": config.groq_model
+        }
+    }
+
+    # Initialize session state for provider and model if not exists
+    if 'selected_provider' not in st.session_state:
+        # Use config default
+        st.session_state.selected_provider = "OpenAI" if config.llm_provider == "openai" else "Groq"
+
+    if 'selected_model' not in st.session_state:
+        default_provider = st.session_state.selected_provider
+        st.session_state.selected_model = PROVIDER_MODELS[default_provider]["default"]
+
+    # Provider selectbox
+    selected_provider = st.selectbox(
+        "Select Provider",
+        options=list(PROVIDER_MODELS.keys()),
+        index=list(PROVIDER_MODELS.keys()).index(st.session_state.selected_provider),
+        help="Choose between OpenAI (paid) or Groq (free tier available)",
+        key="provider_select"
+    )
+
+    # Update session state if provider changed
+    if selected_provider != st.session_state.selected_provider:
+        st.session_state.selected_provider = selected_provider
+        # Reset model to provider default when switching providers
+        st.session_state.selected_model = PROVIDER_MODELS[selected_provider]["default"]
+        st.rerun()
+
+    # Model selectbox (based on selected provider)
+    available_models = PROVIDER_MODELS[selected_provider]["models"]
+    default_model_index = (
+        available_models.index(st.session_state.selected_model)
+        if st.session_state.selected_model in available_models
+        else 0
+    )
+
+    selected_model = st.selectbox(
+        "Select Model",
+        options=available_models,
+        index=default_model_index,
+        help="Select the specific model to use for summarization",
+        key="model_select"
+    )
+
+    # Update session state if model changed
+    if selected_model != st.session_state.selected_model:
+        st.session_state.selected_model = selected_model
+
+    # Display current selection
+    st.markdown("---")
+    st.caption(f"**Active:** {selected_provider} / {selected_model}")
+
+    # Provider info
+    st.markdown("---")
+    st.subheader("ℹ️ Provider Info")
+    if selected_provider == "OpenAI":
+        st.caption(
+            "OpenAI provides high-quality models. "
+            "Requires OPENAI_API_KEY in .env file."
+        )
+    else:
+        st.caption(
+            "Groq offers fast inference with free tier. "
+            "Requires GROQ_API_KEY in .env file."
+        )
+
+    # Advanced settings expander
+    with st.expander("📐 Advanced Settings"):
+        st.caption(f"Chunk Size: {config.chunk_size} chars")
+        st.caption(f"Chunk Overlap: {config.chunk_overlap} chars")
+        st.caption(f"Max Retries: {config.max_retry_attempts}")
 
 # ================================================================================
 # FILE UPLOAD WIDGET
@@ -124,9 +314,9 @@ st.markdown(ui_config.get('description', '## Start summarizing your documents.')
 
 file_uploader_config = ui_config.get('file_uploader', {})
 uploaded_file = st.file_uploader(
-    file_uploader_config.get('label', 'Upload a Text, PDF, or CSV file.'),
-    type=["txt", "pdf", "csv"],
-    help=file_uploader_config.get('help_text', 'Select a file to process. Supported formats: TXT, PDF, CSV')
+    file_uploader_config.get('label', 'Upload a Text, PDF, CSV, or Word document.'),
+    type=["txt", "pdf", "csv", "docx"],
+    help=file_uploader_config.get('help_text', 'Select a file to process. Supported formats: TXT, PDF, CSV, DOCX')
 )
 
 # ================================================================================
@@ -139,14 +329,17 @@ doc_processor = DocumentProcessor(
     chunk_overlap=config.chunk_overlap
 )
 
-# LLM Model Configuration (configured from config.yaml)
-# Provider can be changed in config.yaml: 'openai' or 'groq'
-if config.llm_provider == 'groq':
-    llm = ChatGroq(model=config.groq_model)
-    logger.info(f"Using Groq LLM: {config.groq_model}")
+# LLM Model Configuration (dynamic based on UI selection)
+# Provider and model are selected via sidebar UI
+selected_provider = st.session_state.get('selected_provider', 'OpenAI')
+selected_model = st.session_state.get('selected_model', config.openai_model)
+
+if selected_provider == 'Groq':
+    llm = ChatGroq(model=selected_model)
+    logger.info(f"Using Groq LLM: {selected_model}")
 else:
-    llm = ChatOpenAI(model=config.openai_model)
-    logger.info(f"Using OpenAI LLM: {config.openai_model}")
+    llm = ChatOpenAI(model=selected_model)
+    logger.info(f"Using OpenAI LLM: {selected_model}")
 
 # Output parser: Converts LLM response to string
 parser = StrOutputParser()
@@ -209,55 +402,74 @@ if st.button("Summarize document"):
     chunk_summaries: List[str] = []
 
     prompts = config.get_prompts()
-    with st.spinner(messages.get('summarizing_chunks', 'Summarizing chunks...')):
-        try:
-            logger.info(f"Starting to summarize {len(chunks)} chunks")
 
-            # Process each chunk individually
-            for i, chunk in enumerate(chunks):
-                logger.info(f"Processing chunk {i+1}/{len(chunks)}")
+    # Initialize progress tracker for chunk processing
+    progress_tracker = StreamlitProgressTracker(
+        total_items=len(chunks),
+        description="Summarizing chunks"
+    )
 
-                # Create prompt for chunk summarization from config
-                # Template loaded from config.yaml for easy customization
-                chunk_prompt = ChatPromptTemplate.from_template(
-                    prompts.get('chunk_summary', config.chunk_prompt_template)
-                )
+    try:
+        logger.info(f"Starting to summarize {len(chunks)} chunks")
 
-                # Build LangChain: prompt → LLM → string parser
-                chunk_chain = chunk_prompt | llm | parser
+        # Start progress tracking
+        progress_tracker.start()
 
-                # Invoke with automatic retry logic (3 attempts, exponential backoff)
-                chunk_summary = invoke_llm_with_retry(
-                    chunk_chain,
-                    {"document": chunk},
-                    f"Chunk {i+1}/{len(chunks)}"
-                )
-                chunk_summaries.append(chunk_summary)
+        # Process each chunk individually
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Processing chunk {i+1}/{len(chunks)}")
 
-        except RateLimitError as e:
-            # API rate limit hit even after retries
-            error_messages = ui_config.get('errors', {})
-            logger.error(f"Rate limit exceeded after retries: {str(e)}", exc_info=True)
-            st.error(error_messages.get('rate_limit', '⚠️ API rate limit exceeded. Please wait a moment and try again.'))
-            st.stop()
-        except APIConnectionError as e:
-            # Network/connection issues after retries
-            error_messages = ui_config.get('errors', {})
-            logger.error(f"Connection error after retries: {str(e)}", exc_info=True)
-            st.error(error_messages.get('connection_error', '⚠️ Unable to connect to the AI service. Please check your internet connection.'))
-            st.stop()
-        except APIError as e:
-            # General API errors after retries
-            error_messages = ui_config.get('errors', {})
-            logger.error(f"API error after retries: {str(e)}", exc_info=True)
-            st.error(error_messages.get('api_error', '⚠️ AI service error: {error}').format(error=str(e)))
-            st.stop()
-        except Exception as e:
-            # Catch-all for unexpected errors
-            error_messages = ui_config.get('errors', {})
-            logger.error(f"Unexpected error summarizing chunks: {str(e)}", exc_info=True)
-            st.error(error_messages.get('unexpected_error', '❌ An unexpected error occurred: {error}').format(error=str(e)))
-            st.stop()
+            # Track start time for this chunk
+            chunk_start_time = time.time()
+
+            # Create prompt for chunk summarization from config
+            # Template loaded from config.yaml for easy customization
+            chunk_prompt = ChatPromptTemplate.from_template(
+                prompts.get('chunk_summary', config.chunk_prompt_template)
+            )
+
+            # Build LangChain: prompt → LLM → string parser
+            chunk_chain = chunk_prompt | llm | parser
+
+            # Invoke with automatic retry logic (3 attempts, exponential backoff)
+            chunk_summary = invoke_llm_with_retry(
+                chunk_chain,
+                {"document": chunk},
+                f"Chunk {i+1}/{len(chunks)}"
+            )
+            chunk_summaries.append(chunk_summary)
+
+            # Update progress tracker
+            chunk_time = time.time() - chunk_start_time
+            progress_tracker.update(chunk_time)
+
+        # Mark chunk processing as complete
+        progress_tracker.complete()
+
+    except RateLimitError as e:
+        # API rate limit hit even after retries
+        error_messages = ui_config.get('errors', {})
+        logger.error(f"Rate limit exceeded after retries: {str(e)}", exc_info=True)
+        st.error(error_messages.get('rate_limit', '⚠️ API rate limit exceeded. Please wait a moment and try again.'))
+        st.stop()
+    except APIConnectionError as e:
+        # Network/connection issues after retries
+        error_messages = ui_config.get('errors', {})
+        logger.error(f"Connection error after retries: {str(e)}", exc_info=True)
+        st.error(error_messages.get('connection_error', '⚠️ Unable to connect to the AI service. Please check your internet connection.'))
+        st.stop()
+    except APIError as e:
+        # General API errors after retries
+        error_messages = ui_config.get('errors', {})
+        logger.error(f"API error after retries: {str(e)}", exc_info=True)
+        st.error(error_messages.get('api_error', '⚠️ AI service error: {error}').format(error=str(e)))
+        st.stop()
+    except Exception as e:
+        # Catch-all for unexpected errors
+        error_messages = ui_config.get('errors', {})
+        logger.error(f"Unexpected error summarizing chunks: {str(e)}", exc_info=True)
+        st.error(error_messages.get('unexpected_error', '❌ An unexpected error occurred: {error}').format(error=str(e)))
+        st.stop()
 
     # ============================================================================
     # STEP 2: FINAL SUMMARY GENERATION
@@ -301,6 +513,24 @@ if st.button("Summarize document"):
                 file_name=download_config.get('filename', 'final_summary.txt'),
                 mime="text/plain"
             )
+
+            # ====================================================================
+            # QUALITY METRICS
+            # ====================================================================
+            # Analyze and display summary quality metrics
+
+            # Get original document text from chunks
+            original_text = "\n".join([
+                chunk.page_content if hasattr(chunk, 'page_content') else str(chunk)
+                for chunk in chunks
+            ])
+
+            # Analyze summary quality
+            quality_analyzer = QualityAnalyzer()
+            quality_metrics = quality_analyzer.analyze(original_text, final_summary)
+
+            # Display quality metrics to user
+            display_quality_metrics(quality_metrics)
 
         except RateLimitError as e:
             # API rate limit hit even after retries
